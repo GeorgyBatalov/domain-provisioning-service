@@ -3,6 +3,7 @@ using DomainProvisioningService.Infrastructure.Clients;
 using DomainProvisioningService.Infrastructure.Data;
 using DomainProvisioningService.Infrastructure.Repositories;
 using DomainProvisioningService.Infrastructure.Services;
+using DomainProvisioningService.Worker.Workers;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Events;
@@ -65,10 +66,9 @@ try
     });
 
     // Add background workers
-    // TODO: Add workers when implemented
-    // builder.Services.AddHostedService<DomainVerificationWorker>();
-    // builder.Services.AddHostedService<AcmeIssuanceWorker>();
-    // builder.Services.AddHostedService<RenewalWorker>();
+    builder.Services.AddHostedService<DomainVerificationWorker>();
+    builder.Services.AddHostedService<AcmeIssuanceWorker>();
+    builder.Services.AddHostedService<RenewalWorker>();
 
     // Add health checks
     builder.Services.AddHealthChecks()
