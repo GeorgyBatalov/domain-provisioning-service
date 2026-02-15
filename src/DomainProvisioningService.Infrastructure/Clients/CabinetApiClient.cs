@@ -1,3 +1,6 @@
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using DomainProvisioningService.Application.Interfaces;
 using DomainProvisioningService.Domain;
 using Microsoft.Extensions.Logging;
@@ -11,23 +14,40 @@ public class CabinetApiClient : ICabinetApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<CabinetApiClient> _logger;
+    private readonly JsonSerializerOptions _jsonOptions;
 
     public CabinetApiClient(HttpClient httpClient, ILogger<CabinetApiClient> logger)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
     }
 
     public async Task<List<CustomDomain>> GetCustomDomainsByStatusAsync(
         CustomDomainStatus[] statuses,
         CancellationToken cancellationToken = default)
     {
-        // TODO: Implement actual HTTP call to Cabinet API
-        // GET /internal/v1/custom-domains?statuses=PendingDns,PendingHttpProbe
-        _logger.LogDebug("Getting custom domains by status: {Statuses}", string.Join(",", statuses));
+        try
+        {
+            var statusesParam = string.Join(",", statuses.Select(s => s.ToString()));
+            var url = $"/internal/v1/custom-domains?statuses={statusesParam}";
 
-        // Stub implementation
-        return new List<CustomDomain>();
+            _logger.LogDebug("Getting custom domains by status: {Statuses}", statusesParam);
+
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var domains = await response.Content.ReadFromJsonAsync<List<CustomDomain>>(_jsonOptions, cancellationToken);
+            return domains ?? new List<CustomDomain>();
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to get custom domains from Cabinet API");
+            return new List<CustomDomain>();
+        }
     }
 
     public async Task<bool> UpdateCustomDomainStatusAsync(
@@ -37,12 +57,28 @@ public class CabinetApiClient : ICabinetApiClient
         string? errorMessage = null,
         CancellationToken cancellationToken = default)
     {
-        // TODO: Implement actual HTTP call
-        // POST /internal/v1/custom-domains/{id}/status
-        _logger.LogInformation("Updating custom domain {Id} to status: {Status}", customDomainId, status);
+        try
+        {
+            var url = $"/internal/v1/custom-domains/{customDomainId}/status";
+            var payload = new
+            {
+                status = status.ToString(),
+                errorCode = errorCode?.ToString(),
+                errorMessage
+            };
 
-        // Stub implementation
-        return true;
+            _logger.LogInformation("Updating custom domain {Id} to status: {Status}", customDomainId, status);
+
+            var response = await _httpClient.PostAsJsonAsync(url, payload, _jsonOptions, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            return true;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to update custom domain {Id} status", customDomainId);
+            return false;
+        }
     }
 
     public async Task<bool> UpdateCustomDomainCertificateAsync(
@@ -50,11 +86,25 @@ public class CabinetApiClient : ICabinetApiClient
         DateTime certificateNotAfter,
         CancellationToken cancellationToken = default)
     {
-        // TODO: Implement actual HTTP call
-        // POST /internal/v1/custom-domains/{id}/certificate
-        _logger.LogInformation("Updating certificate info for custom domain {Id}", customDomainId);
+        try
+        {
+            var url = $"/internal/v1/custom-domains/{customDomainId}/certificate";
+            var payload = new
+            {
+                certificateNotAfter
+            };
 
-        // Stub implementation
-        return true;
+            _logger.LogInformation("Updating certificate info for custom domain {Id}", customDomainId);
+
+            var response = await _httpClient.PostAsJsonAsync(url, payload, _jsonOptions, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            return true;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to update certificate for custom domain {Id}", customDomainId);
+            return false;
+        }
     }
 }

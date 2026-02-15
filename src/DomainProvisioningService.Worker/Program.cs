@@ -56,7 +56,13 @@ try
 
     // Add services
     builder.Services.AddSingleton<IDnsVerificationService, DnsVerificationService>();
-    builder.Services.AddScoped<IAcmeService, AcmeService>();
+    builder.Services.AddScoped<IAcmeService>(sp =>
+    {
+        var certificateStore = sp.GetRequiredService<ICertificateStoreRepository>();
+        var logger = sp.GetRequiredService<ILogger<AcmeService>>();
+        var configuration = sp.GetRequiredService<IConfiguration>();
+        return new AcmeService(certificateStore, logger, configuration);
+    });
 
     // Add background workers
     // TODO: Add workers when implemented
