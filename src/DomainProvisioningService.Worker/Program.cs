@@ -1,4 +1,6 @@
 using DomainProvisioningService.Application.Interfaces;
+using DomainProvisioningService.Application.StateMachine;
+using DomainProvisioningService.Application.StateMachine.Handlers;
 using DomainProvisioningService.Infrastructure.Clients;
 using DomainProvisioningService.Infrastructure.Data;
 using DomainProvisioningService.Infrastructure.Repositories;
@@ -28,7 +30,7 @@ try
     // Add Serilog
     builder.Services.AddSerilog();
 
-    // Add DbContext for CertificateStore
+    // Add DbContexts
     var connectionString = builder.Configuration.GetConnectionString("CertificateStore")
         ?? throw new InvalidOperationException("ConnectionString 'CertificateStore' not found");
 
@@ -37,8 +39,14 @@ try
         options.UseNpgsql(connectionString);
     });
 
+    builder.Services.AddDbContext<DomainProvisioningDbContext>(options =>
+    {
+        options.UseNpgsql(connectionString); // Same DB
+    });
+
     // Add repositories
     builder.Services.AddScoped<ICertificateStoreRepository, CertificateStoreRepository>();
+    builder.Services.AddScoped<IDomainProvisioningRepository, DomainProvisioningRepository>();
 
     // Add HTTP clients with Polly retry policies
     builder.Services.AddHttpClient<ICabinetApiClient, CabinetApiClient>(client =>
@@ -65,14 +73,34 @@ try
         return new AcmeService(certificateStore, logger, configuration);
     });
 
-    // Add background workers
-    builder.Services.AddHostedService<DomainVerificationWorker>();
-    builder.Services.AddHostedService<AcmeIssuanceWorker>();
-    builder.Services.AddHostedService<RenewalWorker>();
+    // Add State Machine and Handlers
+    builder.Services.AddScoped<IDomainProvisioningStateMachine, DomainProvisioningStateMachine>();
+
+    // Register all state transition handlers
+    builder.Services.AddScoped<IStateTransitionHandler, InitialStateHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, DnsVerificationHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, DnsVerifiedHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, AcmeOrderingHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, AcmeChallengePreparingHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, AcmeChallengeValidatingHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, AcmeChallengeValidatedHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, CertificateDownloadingHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, CertificateDownloadedHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, CertificateDeployingHandler>();
+    builder.Services.AddScoped<IStateTransitionHandler, CertificateDeployedHandler>();
+
+    // Add State Machine Worker (replaces 3 old workers)
+    builder.Services.AddHostedService<DomainProvisioningStateMachineWorker>();
+
+    // OLD WORKERS DISABLED - replaced by state machine
+    // builder.Services.AddHostedService<DomainVerificationWorker>();
+    // builder.Services.AddHostedService<AcmeIssuanceWorker>();
+    // builder.Services.AddHostedService<RenewalWorker>();
 
     // Add health checks
     builder.Services.AddHealthChecks()
-        .AddDbContextCheck<CertificateStoreDbContext>("database");
+        .AddDbContextCheck<CertificateStoreDbContext>("certificate_store_db")
+        .AddDbContextCheck<DomainProvisioningDbContext>("domain_provisioning_db");
 
     var host = builder.Build();
 
