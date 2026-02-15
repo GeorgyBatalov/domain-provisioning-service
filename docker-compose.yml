@@ -1,0 +1,52 @@
+services:
+  domain-provisioning-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: domain-provisioning-service
+    restart: unless-stopped
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - CabinetApi__BaseUrl=http://cabinet-api:5000
+      - HAProxyAgent__BaseUrl=http://haproxy-agent:8081
+      - CertificateStore__ConnectionString=Host=postgres;Port=5432;Database=tunnel_cabinet;Username=tunnel_user;Password=tunnel_password
+      - LetsEncrypt__DirectoryUrl=https://acme-staging-v02.api.letsencrypt.org/directory
+      - LetsEncrypt__Email=admin@xtunnel.ru
+      - Workers__DomainVerification__IntervalSeconds=30
+      - Workers__AcmeIssuance__IntervalSeconds=60
+      - Workers__Renewal__IntervalSeconds=21600
+    ports:
+      - "8082:8080"
+    networks:
+      - tunnel2-network
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: tunnel2-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tunnel_cabinet
+      POSTGRES_USER: tunnel_user
+      POSTGRES_PASSWORD: tunnel_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - tunnel2-network
+
+networks:
+  tunnel2-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
